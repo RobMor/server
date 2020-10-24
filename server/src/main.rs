@@ -1,17 +1,26 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Arc;
 
 use log::{error, info};
+use openssl::pkey::Private;
+use openssl::rsa;
+use simple_logger::SimpleLogger;
 use tokio::net::TcpListener;
 use tokio::stream::StreamExt;
 
-mod connection;
+#[macro_use]
+extern crate mcserver_macros;
+
+mod api;
 mod protocol;
 
-use connection::ConnectionHandler;
+use protocol::connection::ConnectionHandler;
 
 #[tokio::main]
 async fn main() {
-    simple_logger::init().unwrap();
+    SimpleLogger::new().init().unwrap();
+
+    let rsa_key = Arc::new(rsa::Rsa::generate(1024).expect("Could not generate server key"));
 
     let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 25565);
     let mut listener = TcpListener::bind(address)
@@ -20,17 +29,16 @@ async fn main() {
         .unwrap();
 
     let server = async move {
-        let mut incoming = listener.incoming();
-
-        while let Some(result) = incoming.next().await {
+        while let Some(result) = listener.next().await {
             match result {
                 Ok(socket) => {
                     let peer_addr = socket.peer_addr().unwrap();
                     info!("Accepted connection from {}", peer_addr);
 
+                    let key_copy = rsa_key.clone();
                     // Spawn a new task for each connection
                     tokio::spawn(async move {
-                        let connection_handler = ConnectionHandler::new(socket);
+                        let connection_handler = ConnectionHandler::new(key_copy, socket);
 
                         let result = connection_handler.execute().await;
 

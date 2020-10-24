@@ -3,7 +3,7 @@ use bytes::BytesMut;
 use log::trace;
 use uuid::Uuid;
 
-use crate::protocol::data_types::{ByteArray, SizedDataType};
+use crate::protocol::data_types::{DataType, SizedDataType};
 use crate::protocol::packets::{ClientboundPacket, FromPacket, IntoPacket, ServerboundPacket};
 
 pub struct Start {
@@ -28,8 +28,8 @@ impl FromPacket for Start {
 
 pub struct EncryptionRequest {
     server_id: String, // Always empty...
-    public_key: ByteArray,
-    verify_token: ByteArray,
+    public_key: Vec<u8>,
+    verify_token: Vec<u8>,
 }
 
 impl EncryptionRequest {
@@ -57,12 +57,12 @@ impl IntoPacket for EncryptionRequest {
 }
 
 pub struct EncryptionResponse {
-    shared_secret: ByteArray,
-    verify_token: ByteArray,
+    shared_secret: Vec<u8>,
+    verify_token: Vec<u8>,
 }
 
 impl EncryptionResponse {
-    pub fn into_parts(self) -> (ByteArray, ByteArray) {
+    pub fn into_parts(self) -> (Vec<u8>, Vec<u8>) {
         (self.shared_secret, self.verify_token)
     }
 }
@@ -72,21 +72,21 @@ impl FromPacket for EncryptionResponse {
         let mut data = packet.data();
 
         Ok(EncryptionResponse {
-            shared_secret: ByteArray::read_from_sized(&mut data, 128)?,
-            verify_token: ByteArray::read_from_sized(&mut data, 128)?,
+            shared_secret: Vec::<u8>::read_from_sized(&mut data, 128)?,
+            verify_token: Vec::<u8>::read_from_sized(&mut data, 128)?,
         })
     }
 }
 
 pub struct Success {
-    uuid: String,
+    uuid: Uuid,
     username: String,
 }
 
 impl Success {
     pub fn new(uuid: &Uuid, username: &str) -> Success {
         Success {
-            uuid: format!("{:x}", uuid.to_hyphenated_ref()),
+            uuid: uuid.clone(),
             username: username.to_string(),
         }
     }

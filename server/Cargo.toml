@@ -1,0 +1,49 @@
+[package]
+name = "mcserver"
+version = "0.1.0"
+authors = ["Robert Morrison <robbieguy98@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+mcserver_macros = { path = "../macros" }
+
+# Serde for generating JSON strings
+serde_json = "1.0"
+
+# Tokio for concurrency
+tokio = { version="0.2", features=["full"] }
+
+# Tokio Util for codecs
+tokio-util = { version="0.3", features=["codec"] }
+
+# Futures for concurrency types
+futures = "0.3"
+
+# Bytes for handling bytes from the TCP stream
+bytes = "0.5"
+
+# Anyhow for error handling
+anyhow = "1.0"
+
+# Log for logging
+log = { version = "0.4", features = ["release_max_level_warn"] }
+
+# Simple Logger for logging backend
+simple_logger = "1.6"
+
+# OpenSSL for encryption
+openssl = "0.10"
+
+# Rand for simple randomness
+rand = "0.7"
+
+# BigInt for easily generating username hashes... TODO
+num-bigint = "0.3"
+
+# Reqwest for easy http requests (to Mojangs API)
+reqwest = { version = "0.10", features = ["json"] }
+
+# UUID for generating and using uuids
+uuid = "0.8"

@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Error};
+use anyhow::{anyhow, Result};
 
 use crate::protocol::data_types::{DataType, SizedDataType, UnsignedShort, VarInt};
 use crate::protocol::packets::{FromPacket, ServerboundPacket};
@@ -35,7 +35,7 @@ impl Handshake {
 }
 
 impl FromPacket for Handshake {
-    fn from_packet(packet: ServerboundPacket) -> Result<Handshake, Error> {
+    fn from_packet(packet: ServerboundPacket) -> Result<Handshake> {
         let mut buf = packet.data();
 
         Ok(Handshake {

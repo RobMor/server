@@ -1,6 +1,7 @@
+use std::sync::Arc;
+
 use anyhow::{anyhow, Result};
 use futures::{SinkExt, StreamExt};
-use lazy_static::lazy_static;
 use log::debug;
 use openssl::pkey::Private;
 use openssl::rsa;
@@ -8,16 +9,12 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio_util::codec::{FramedRead, FramedWrite};
 
-use crate::protocol::api;
+use crate::api;
 use crate::protocol::codec::{ClientboundEncoder, ServerboundDecoder};
+use crate::protocol::data_types::{Identifier, VarInt};
 use crate::protocol::packets::{
     handshake, login, play, status, ClientboundPacket, IntoPacket, ServerboundPacket,
 };
-
-lazy_static! {
-    static ref RSA_KEY: rsa::Rsa<Private> =
-        rsa::Rsa::generate(1024).expect("Could not generate server key");
-}
 
 enum State {
     Handshaking,
@@ -27,7 +24,16 @@ enum State {
     Play,
 }
 
+// pub enum ConnectionContext {
+//     Handshaking(..),
+//     Status(..),
+//     Login(..),
+//     Encrypt(..),
+//     Play(..),
+// }
+
 pub struct ConnectionHandler {
+    rsa_key: Arc<rsa::Rsa<Private>>,
     // Login Information
     username: Option<String>,
     verify_token: Option<[u8; 4]>,
@@ -38,11 +44,18 @@ pub struct ConnectionHandler {
     writer: FramedWrite<OwnedWriteHalf, ClientboundEncoder>,
 }
 
+// impl ConnectionHandler {
+//     pub fn new(..);
+
+//     pub fn handle(connection: TcpStream); // Spawns a tokio task?
+// }
+
 impl ConnectionHandler {
-    pub fn new(socket: TcpStream) -> ConnectionHandler {
+    pub fn new(rsa_key: Arc<rsa::Rsa<Private>>, socket: TcpStream) -> ConnectionHandler {
         let (socket_read, socket_write) = socket.into_split();
 
         ConnectionHandler {
+            rsa_key,
             username: None,
             verify_token: None,
 
@@ -90,7 +103,10 @@ impl ConnectionHandler {
                 id => return Err(anyhow!("Unrecognized login packet id {}", id)),
             },
             State::Encrypt => match packet.packet_id() {
-                0x01 => self.handle_login_encryption_response(packet.parse()?).await?,
+                0x01 => {
+                    self.handle_login_encryption_response(packet.parse()?)
+                        .await?
+                }
                 id => return Err(anyhow!("Unrecognized login packet id {}", id)),
             },
             State::Play => match packet.packet_id() {
@@ -134,7 +150,7 @@ impl ConnectionHandler {
         debug!("handling login start packet");
 
         let verify_token = rand::random();
-        let public_key = RSA_KEY.public_key_to_der()?;
+        let public_key = self.rsa_key.public_key_to_der()?;
 
         let encryption_request = login::EncryptionRequest::new(public_key, verify_token);
 
@@ -156,7 +172,7 @@ impl ConnectionHandler {
         let (encryped_shared_secret, encryped_verify_token) = response.into_parts();
 
         let mut shared_secret_decrypted = [0u8; 128];
-        let num_bytes = RSA_KEY.private_decrypt(
+        let num_bytes = self.rsa_key.private_decrypt(
             &encryped_shared_secret,
             &mut shared_secret_decrypted,
             rsa::Padding::PKCS1,
@@ -167,7 +183,7 @@ impl ConnectionHandler {
         }
 
         let mut verify_token_decrypted = [0u8; 128];
-        let num_bytes = RSA_KEY.private_decrypt(
+        let num_bytes = self.rsa_key.private_decrypt(
             &encryped_verify_token,
             &mut verify_token_decrypted,
             rsa::Padding::PKCS1,
@@ -192,7 +208,7 @@ impl ConnectionHandler {
         let uuid = api::authenticate(
             self.username.as_ref().unwrap(),
             &shared_secret_decrypted[..16],
-            &RSA_KEY.public_key_to_der()?,
+            &self.rsa_key.public_key_to_der()?,
         )
         .await?;
 
@@ -205,15 +221,33 @@ impl ConnectionHandler {
         // TODO move this elsewhere?
         // A play handler?
 
+        /* entity_id: i32,
+        is_hardcore: bool,
+        gamemode: u8,
+        previous_gamemode: i8,
+        world_names: Vec<Identifier>,
+        dimension_codec: Identifier,
+        hashed_seed: i64,
+        max_players: u8,
+        level_type: String,
+        view_distance: VarInt,
+        reduced_debug_info: bool,
+        enable_respawn_screen: bool,
+        */
+
         let join_game = play::JoinGame::new(
             0,
+            false,
             0,
+            0,
+            Vec::new(),
+            Identifier::new("whatever".to_string()),
             0,
             0,
             "flat".to_string(),
-            4,
+            VarInt::new(0),
             false,
-            true,
+            false,
         );
 
         self.send(join_game.into_packet()).await?;

@@ -1,7 +1,8 @@
 use std::convert::TryInto;
+use std::error::Error;
+use std::fmt;
 
 use bytes::{Buf, BufMut, BytesMut};
-use thiserror::Error;
 
 use uuid::Uuid;
 
@@ -27,19 +28,38 @@ pub trait SizedDataType: Sized {
     fn size(&self) -> usize;
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub enum DataTypeError {
-    #[error("Ran out of bytes reading {0}")]
     OutOfBytes(String),
-    #[error("Encountered malformed data while reading {0}: {1}")]
     Malformed(String, String),
-    #[error("{1}: {0}")]
-    ErrorWithContext(Box<DataTypeError>, String),
+    Context(Box<DataTypeError>, String),
+}
+
+impl fmt::Display for DataTypeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::OutOfBytes(s) => write!(f, "Ran out of bytes reading {}", s),
+            Self::Malformed(s1, s2) => {
+                write!(f, "Encountered malformed data while reading {}: {}", s1, s2)
+            }
+            Self::Context(_, s) => write!(f, "{}", s),
+        }
+    }
+}
+
+impl Error for DataTypeError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        if let Self::Context(other, _) = self {
+            Some(other)
+        } else {
+            None
+        }
+    }
 }
 
 impl DataTypeError {
     fn add_context(self, context: impl Into<String>) -> DataTypeError {
-        DataTypeError::ErrorWithContext(Box::new(self), context.into())
+        DataTypeError::Context(Box::new(self), context.into())
     }
 }
 
@@ -276,11 +296,58 @@ impl SizedDataType for String {
     }
 }
 
-// TODO
-pub type Chat = String;
+pub struct Chat {
+    message: String,
+}
+
+impl Chat {
+    pub fn new(message: String) -> Chat {
+        Chat { message }
+    }
+}
+
+impl DataType for Chat {
+    fn read_from(src: &mut BytesMut) -> Result<Chat> {
+        Ok(Chat {
+            message: String::read_from_sized(src, 32767)?,
+        })
+    }
+
+    fn write_to(self, dst: &mut BytesMut) {
+        self.message.write_to(dst)
+    }
+
+    fn size(&self) -> usize {
+        self.message.size()
+    }
+}
 
 // TODO
-pub type Identifier = String;
+pub struct Identifier {
+    identifier: String,
+}
+
+impl Identifier {
+    pub fn new(identifier: String) -> Identifier {
+        Identifier { identifier }
+    }
+}
+
+impl DataType for Identifier {
+    fn read_from(src: &mut BytesMut) -> Result<Identifier> {
+        Ok(Identifier {
+            identifier: String::read_from_sized(src, 32767)?,
+        })
+    }
+
+    fn write_to(self, dst: &mut BytesMut) {
+        self.identifier.write_to(dst)
+    }
+
+    fn size(&self) -> usize {
+        self.identifier.size()
+    }
+}
 
 #[derive(Debug, Copy, Clone)]
 pub struct VarInt {
@@ -589,10 +656,8 @@ impl DataType for Uuid {
     }
 }
 
-pub type ByteArray = Vec<u8>;
-
-impl SizedDataType for ByteArray {
-    fn read_from_sized(src: &mut BytesMut, size: usize) -> Result<ByteArray> {
+impl<T: DataType> SizedDataType for Vec<T> {
+    fn read_from_sized(src: &mut BytesMut, size: usize) -> Result<Vec<T>> {
         let array_size = VarInt::read_from(src)?.value() as usize;
 
         if array_size > size {
@@ -605,24 +670,76 @@ impl SizedDataType for ByteArray {
             ));
         }
 
-        if src.remaining() >= array_size {
-            Ok(src.split_to(array_size).as_ref().into())
-        } else {
-            Err(DataTypeError::OutOfBytes("ByteArray".to_string()))
+        let mut vec = Vec::with_capacity(array_size);
+
+        while vec.len() < array_size {
+            match T::read_from(src) {
+                Ok(v) => vec.push(v),
+                Err(DataTypeError::OutOfBytes(s)) => {
+                    return Err(DataTypeError::OutOfBytes(format!("Array of {}", s)))
+                }
+                Err(e) => {
+                    return Err(DataTypeError::Context(
+                        Box::new(e),
+                        "Error parsing element of Array".to_string(),
+                    ))
+                }
+            }
         }
+
+        Ok(vec)
     }
 
     fn write_to(self, dst: &mut BytesMut) {
         let length = VarInt::new(self.len() as i32);
 
         length.write_to(dst);
-        dst.extend_from_slice(&self);
+
+        for v in self {
+            v.write_to(dst);
+        }
     }
 
     fn size(&self) -> usize {
         VarInt::new(self.len() as i32).size() + self.len()
     }
 }
+
+/// A much faster implementation for a vector of bytes but since we can't have
+/// both this and the generic implementation I've opted for the ergonomics of
+/// the generics...
+// impl SizedDataType for Vec<u8> {
+//     fn read_from_sized(src: &mut BytesMut, size: usize) -> Result<ByteArray> {
+//         let array_size = VarInt::read_from(src)?.value() as usize;
+
+//         if array_size > size {
+//             return Err(DataTypeError::Malformed(
+//                 "ByteArray".to_string(),
+//                 format!(
+//                     "header length {} longer than max size of {}",
+//                     array_size, size
+//                 ),
+//             ));
+//         }
+
+//         if src.remaining() >= array_size {
+//             Ok(src.split_to(array_size).as_ref().into())
+//         } else {
+//             Err(DataTypeError::OutOfBytes("ByteArray".to_string()))
+//         }
+//     }
+
+//     fn write_to(self, dst: &mut BytesMut) {
+//         let length = VarInt::new(self.len() as i32);
+
+//         length.write_to(dst);
+//         dst.extend_from_slice(&self);
+//     }
+
+//     fn size(&self) -> usize {
+//         VarInt::new(self.len() as i32).size() + self.len()
+//     }
+// }
 
 #[cfg(test)]
 mod tests {

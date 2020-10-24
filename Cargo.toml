@@ -1,53 +1,6 @@
-[package]
-name = "mcserver"
-version = "0.1.0"
-authors = ["Robert Morrison <robbieguy98@gmail.com>"]
-edition = "2018"
+[workspace]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-# Serde for generating JSON strings
-serde_json = "1.0"
-
-# Tokio for concurrency
-tokio = { version="0.2", features=["full"] }
-
-# Futures for concurrency types
-futures = "0.3"
-
-# Tokio-Codec for an easy interface to read packets off a TCP stream with
-tokio-util = { version="0.3", features=["codec"] }
-
-# Bytes for handling bytes from the TCP stream
-bytes = "0.5"
-
-# Anyhow for error handling
-anyhow = "1.0"
-
-# ThisError for custom error types
-thiserror = "1.0"
-
-# Log for logging
-log = { version = "0.4", features = ["release_max_level_warn"] }
-
-# Simple Logger for logging backend
-simple_logger = "1.6"
-
-# OpenSSL for encryption
-openssl = "0.10"
-
-# Rand for simple randomness
-rand = "0.7"
-
-# Lazy Static for lazily generating static objects... TODO
-lazy_static = "1.4"
-
-# BigInt for easily generating username hashes... TODO
-num-bigint = "0.3"
-
-# Reqwest for easy http requests (to Mojangs API)
-reqwest = { version = "0.10", features = ["json"] }
-
-# UUID for generating and using uuids
-uuid = "0.8"
+members = [
+    "server",
+    "macros"
+]

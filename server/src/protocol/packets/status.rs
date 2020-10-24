@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Error};
 use bytes::{Buf, BytesMut};
 use serde_json::json;
 
@@ -8,7 +8,7 @@ use crate::protocol::packets::{ClientboundPacket, FromPacket, IntoPacket, Server
 pub struct Request;
 
 impl FromPacket for Request {
-    fn from_packet(packet: ServerboundPacket) -> Result<Self> {
+    fn from_packet(packet: ServerboundPacket) -> Result<Self, Error> {
         // TODO make sure we are at the end of the packet here...
         // The request packet has no payload
         if packet.data().remaining() == 0 {
@@ -35,8 +35,8 @@ impl Response {
         // TODO dynamic protocol number and version name
         let response = json!({
             "version": {
-                "name": "MC Server 1.15.2",
-                "protocol": 578,
+                "name": "MC Server 1.16.3",
+                "protocol": 753,
             },
             "players": {
                 "max": players_max,
@@ -68,7 +68,7 @@ pub struct Ping {
 }
 
 impl FromPacket for Ping {
-    fn from_packet(packet: ServerboundPacket) -> Result<Ping> {
+    fn from_packet(packet: ServerboundPacket) -> Result<Ping, Error> {
         let mut data = packet.data();
 
         Ok(Ping {

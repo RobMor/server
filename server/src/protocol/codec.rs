@@ -2,7 +2,6 @@ use std::convert::TryInto;
 
 use anyhow::{Context, Error};
 use bytes::BytesMut;
-use lazy_static::lazy_static;
 use log::{info, trace};
 use openssl::symm::{Cipher, Crypter, Mode};
 use tokio_util::codec::{Decoder, Encoder};
@@ -10,12 +9,8 @@ use tokio_util::codec::{Decoder, Encoder};
 use crate::protocol::data_types::{DataType, DataTypeError, VarInt};
 use crate::protocol::packets::{ClientboundPacket, ServerboundPacket};
 
-lazy_static! {
-    static ref CIPHER: Cipher = Cipher::aes_128_cfb8();
-}
-
 pub struct ServerboundDecoder {
-    /// An OpenSSL cipher that will be Some when encryption is enabled. 
+    /// An OpenSSL cipher that will be Some when encryption is enabled.
     decrypter: Option<Crypter>,
     /// An internal buffer that buffers decrypted packet data for the decoder.
     buffer: BytesMut,
@@ -33,7 +28,7 @@ impl ServerboundDecoder {
         info!("decoder enabling encryption");
 
         self.decrypter = Some(Crypter::new(
-            *CIPHER,
+            Cipher::aes_128_cfb8(),
             Mode::Decrypt,
             key,
             Some(key), // Both sides use the shared secret as the Key and IV
@@ -59,7 +54,7 @@ impl Decoder for ServerboundDecoder {
             // Unfortunately this means heap allocations for every packet.
             // TODO some Rust libraries allow in place decryption (how much do we care about
             // security?
-            self.buffer.resize(new_data.len() + CIPHER.block_size() + start, 0);
+            self.buffer.resize(new_data.len() + 16 + start, 0);
 
             let num_decrypted = decrypter.update(&new_data, &mut self.buffer[start..])?;
 
@@ -102,6 +97,8 @@ impl Decoder for ServerboundDecoder {
     }
 }
 
+pub enum EncoderError {}
+
 pub struct ClientboundEncoder {
     encrypter: Option<Crypter>,
 }
@@ -115,7 +112,7 @@ impl ClientboundEncoder {
         info!("encoder enabling encryption");
 
         self.encrypter = Some(Crypter::new(
-            *CIPHER,
+            Cipher::aes_128_cfb8(),
             Mode::Encrypt,
             key,
             Some(key), // Both sides use the shared secret as the Key and IV
@@ -138,7 +135,7 @@ impl Encoder<ClientboundPacket> for ClientboundEncoder {
         let buffer_length = VarInt::new(buffer_length);
 
         let length = buffer_length.size() + buffer_length.value() as usize;
-        dst.reserve(length + CIPHER.block_size());
+        dst.reserve(length + 16); // 16 is cipher block size
 
         // TODO
         if let Some(encrypter) = self.encrypter.as_mut() {
